@@ -1,145 +1,140 @@
 
 import math
+import random
+import matplotlib.pyplot as plt
+from ECGroupClasses import ECGroup, Point
 
-class Point():
-    def __init__(self, x: int, y: int, order = None) -> None:
-        #O is the point (math.inf, math.inf)
-        self.x = x
-        self.y = y
-        self.order = order
+def gcd(x: int,y: int) -> int:
+    d = 1
+    test_d = 2
+    while test_d < x and test_d < y:
+        if x % test_d == 0 and y % test_d == 0:
+            d = test_d
 
-    def __eq__(self, other) -> bool:
-        if not(isinstance(other, Point)):
-            return False
-        return (self.x == other.x) and (self.y == other.y)
+        test_d += 1
+    return d
 
-    def __hash__(self):
-        return hash((self.x, self.y))
+def solve_mod_z(p: int, g: int, h: int) -> int:
+    d = gcd(p,g)
+    if (h % d) != 0:
+        return None
 
-    def __str__(self):
-        return f"(x,y): ({self.x},{self.y}) | {self.order}"
+    g = int(g/d)
+    h = int(h/d)
+    p = int(p/d)
+    try:
+        g_inv = pow(g, -1, p)
+    except:
+        print(f"g: {g} p: {p}")
+    return h*g_inv % p
 
-class ECGroup():
-    def __init__(self, a: int, b: int, p: int):
-        self.a = a
-        self.b = b
-        self.p = p
-        self.validate()
-        self.points = self.enumerate_points()
-        self.points_set = set(self.points)
+def visual(ec, P = None):
+    if P is None:
+        P = ec.points[1]
+    Q = Point(math.inf, math.inf)
 
-    def validate(self):
-        if not self.is_prime(self.p):
-            raise ValueError(f"p ({self.p}) is not prime")
-        if (4 * self.a**3 + 27 * self.b**2) % self.p == 0:
-            raise ValueError(f"Invalid elliptic curve parameters: a: {self.a} | b: {self.b} | p: {self.p}")
-        
-    @staticmethod
-    def is_prime(n: int) -> bool:
-        if n < 2:
-            return False
-        for i in range(2, int(n**0.5) + 1):
-            if n % i == 0:
-                return False
-        return True
+    points_visited = []
+    xs, ys = [], []
 
-    def add(self, p1: Point, p2: Point) -> Point:
-        if p1 == Point(math.inf,math.inf):
-            p3 = p2
-        elif p2 == Point(math.inf,math.inf):
-            p3 = p1
-        elif p1.x != p2.x:
-            inv = pow(p2.x - p1.x, -1, self.p)
-            m = ((p2.y - p1.y) * inv) % self.p
-            x = (m**2 - p1.x - p2.x) % self.p
-            y = (m*(p1.x-x)-p1.y) % self.p
-            p3 = Point(x,y)
-        elif p1.y != p2.y:
-            p3 = Point(math.inf, math.inf)
-        elif p1.y == 0:
-            p3 = Point(math.inf, math.inf)
-        else:
-            inv = pow(2*p1.y, -1, self.p)
-            m = ((3*(p1.x**2)+self.a)* inv) % self.p
-            x = (m**2 - 2*p1.x) % self.p
-            y = (m*(p1.x-x)-p1.y) % self.p
-            p3 = Point(x,y)
+    while Q not in points_visited:
+        points_visited.append(Q)
+        if not math.isinf(Q.x):
+            xs.append(Q.x)
+            ys.append(Q.y)
+        Q = ec.add(Q, P)
 
-        return p3
+    plt.figure()
 
-    def f(self,x: int) -> int:
-        return (x**3 + self.a*x + self.b) % self.p
+    # Plot the path
+    plt.scatter(xs, ys)
 
-    def enumerate_points(self) -> list:
-        points = []
-        for x in range(self.p):
-            for y in range(self.p):
-                if (y*y) % self.p == self.f(x):
-                    points.append(Point(x, y))
-        points.append(Point(math.inf, math.inf))  # point at infinity
-        return points
+    # Draw arrows to indicate direction
+    for i in range(len(xs) - 1):
+        dx = xs[i+1] - xs[i]
+        dy = ys[i+1] - ys[i]
+        plt.quiver(xs[i], ys[i], dx, dy,
+                   angles='xy', scale_units='xy', scale=1,
+                   width=0.003)
 
-    def find_generators(self) -> list:
-        generators = []
-        for start_point in self.points:
-            generated = []
-            point = start_point
-            while not(point in generated):
-                generated.append(point)
-                point = self.add(point, start_point)
-            if set(generated) == self.points_set:
-                generators.append(start_point)
-        return generators
-        
-    def isomorphism(self, start_point = None):
-        ordered_points = []
-        ordered_points.append(Point(math.inf,math.inf, 0))
-        point = start_point
-        order = 1
-        while not(point == Point(math.inf,math.inf)):
-            point.order = order
-            ordered_points.append(point)
-            point = self.add(point,start_point)
-            order += 1
-        self.points = ordered_points
+    # Highlight generator P
+    plt.scatter(P.x, P.y, color='red', zorder=3)
+    plt.scatter(xs[-1], ys[-1], color='green', zorder=3)
 
-    def __str__(self):
-        string = ""
-        for point in self.points:
-            string += str(point) +"\n"
-        string = string[:-1]
-        return string
+    # Axis scaling
+    pad = 0
+    plt.xlim(0, ec.p - 1)
+    plt.ylim(0, ec.p - 1)
+    plt.gca().set_aspect('equal', adjustable='box')
 
+    plt.grid(True)
+    plt.title(f"Cyclic Subgroup Generated by P: a: {ec.a} | b: {ec.b} | p: {ec.p}")
+    plt.show()
 
+def find_a_and_b_for_prime_p(p: int) -> list[ECGroup]:
+    ecgroups = []
+    if p < 5:
+        return ecgroups
+
+    for a in range(60,p):
+        for b in range(60,p):
+            if ((4 * a**3 + 27 * b**2) % p != 0):
+                possible_group = ECGroup(a,b,p)
+                if ECGroup.is_prime(len(possible_group.points)) and len(possible_group.points) >= 5:
+                    ecgroups.append(possible_group)
+                    print(f"a: {a} | b: {b} | p: {p} | Order: {len(possible_group.points)}")
+
+    print()
+    return ecgroups
+
+def work_with_ecgroup(ecgroup: ECGroup):
+    zp = len(ecgroup.points)
+    p = ecgroup.p
+    ecgroup.isomorphism() 
+
+    G = random.choice(ecgroup.generators)
+    g = G.order  
+
+    H = Point(math.inf, math.inf)
+    while H == Point(math.inf, math.inf) or H == G:
+        H = random.choice(ecgroup.points)
+    h = H.order
     
+    k = solve_mod_z(zp, g, h)
+
+    print(f"E(Z_{p}) ~ Z_{zp}")
+    print(f"Generator G ~ g: {G} ~ {g} | Target H ~ h: {H} ~ {h} | Solution k: {k}")
+    print(f"Verification of kG = H: ")
+    print(f"    {k}*{G} = {ecgroup.multiply(G, k)} = {H}")
+    print(f"    {k}*{g} mod {zp} = {(k*g)%zp} mod {zp} = {h%zp} mod {p}")
+
+    if (k*g) % zp != h % zp:
+        print(f"ERROR: {(k*g)%zp} mod {zp} != {h} mod {zp}")
+    if not(ecgroup.multiply(G, k) == H):
+        print(f"ERROR: {k*G} != {H}")
+
+    print()
+    visual(ecgroup, G)
+
+def prime_order_ecgroups_for_prime_p(p = 7):
+    ecgroups = find_a_and_b_for_prime_p(p)
+    for group in ecgroups:
+        work_with_ecgroup(group)
 
 def main():
-    p = 107
-
     if False:
-        for a in range(0,p):
-            for b in range(0,p):
-                if ECGroup.is_prime(p) and ((4 * a**3 + 27 * b**2) % p != 0):
-                    possible_group = ECGroup(a,b,p)
-                    if ECGroup.is_prime(len(possible_group.points)) and ECGroup.is_prime(a) and ECGroup.is_prime(b):
-                        print(f"a: {a} | b: {b} | p: {p} | Order: {len(possible_group.points)}")
+        find_a_and_b_for_prime_p(7)
 
+    p = 107
     a = 11
     b = 13
 
-    ecgroup = ECGroup(11,13,p)
+    ecgroup = ECGroup(a,b,p)
+    example_ecgroup = ECGroup(3,3,7)
+    #work_with_ecgroup(ecgroup)
+    #work_with_ecgroup(example_ecgroup)
+    #prime_order_ecgroups_for_prime_p(107)
 
-    gen = ecgroup.find_generators()
-    print()
-    for gener in gen:
-        print(gener)
-    print(len(gen))
-    print(len(ecgroup.points))
-
-    ecgroup.isomorphism(gen[30])
-    print(ecgroup)
-
+    work_with_ecgroup(ECGroup(4,8,11))
     
-
 if __name__ == "__main__":
     main()
